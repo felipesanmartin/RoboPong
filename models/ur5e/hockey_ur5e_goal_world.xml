@@ -1,0 +1,18 @@
+<mujoco model="hockey_ur5e_goal_world">
+  <!-- Base environment: UR5e robot, table surface, lighting, cameras, base contacts -->
+  <include file="hockey_ur5e_base.xml"/>
+
+  <!-- Puck -->
+  <include file="hockey_puck.xml"/>
+
+  <!-- Opponent Back Wall with Goal Opening -->
+  <include file="back_with_goal.xml"/>
+
+  <!-- Lateral Side Walls -->
+  <include file="side_walls.xml"/>
+
+  <contact>
+    <!-- Frictionless, crisp elastic paddle strikes -->
+    <pair geom1="paddle_geom" geom2="puck_geom" condim="1" friction="0 0 0 0 0" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+  </contact>
+</mujoco>

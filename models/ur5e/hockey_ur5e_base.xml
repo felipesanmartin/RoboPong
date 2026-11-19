@@ -1,0 +1,49 @@
+<mujoco model="hockey_ur5e_base">
+  <compiler angle="radian" meshdir="assets" autolimits="true"/>
+
+  <option timestep="0.001" gravity="0 0 -9.81" integrator="implicitfast" iterations="100" tolerance="1e-6">
+    <flag contact="enable" energy="enable"/>
+  </option>
+
+  <default>
+    <!-- Frictionless, highly elastic defaults for air hockey simulation -->
+    <geom condim="3" friction="0.0 0.0 0.0" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+    <joint damping="0.0" armature="0.0"/>
+  </default>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.4 0.6 0.8" rgb2="0.1 0.15 0.25" width="512" height="512"/>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1="0.88 0.94 0.98" rgb2="0.80 0.90 0.96"/>
+    <material name="table_mat" texture="grid" texrepeat="6 3" reflectance="0.2"/>
+    <material name="wall_mat" rgba="0.2 0.25 0.35 1.0" reflectance="0.3"/>
+    <material name="goal_mat" rgba="0.1 0.8 0.2 0.8" reflectance="0.4"/>
+  </asset>
+
+  <worldbody>
+    <!-- Directional Light and Ambient Shadows -->
+    <light directional="true" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3" pos="0 0 5" dir="0 0 -1" castshadow="true"/>
+
+    <!-- Standard Cameras -->
+    <camera name="top_down" pos="0 0 5.5" xyaxes="0 1 0 -1 0 0"/>
+    <camera name="behind_robot" pos="-3.8 0 2.2" xyaxes="0 1 0 -0.45 0 -0.892"/>
+    <camera name="side_view" pos="-0.5 -3.0 2.0" xyaxes="1 0 0 0 0.55 -0.835"/>
+
+    <!-- Frictionless Air Hockey Table Surface (Damped Support Plane, excludes Puck) -->
+    <geom name="table_surface" type="plane" pos="0 0 0" size="3.0 1.5 0.1" material="table_mat"
+      contype="2" conaffinity="2" solref="0.004 1.0" solimp="0.95 0.99 0.003"/>
+  </worldbody>
+
+  <!-- Reusable 6-DOF UR5e Manipulator with Striker Paddle -->
+  <include file="ur5e_paddle.xml"/>
+
+  <contact>
+    <!-- Frictionless, critically damped table support: stops paddle penetration with zero sliding friction -->
+    <pair geom1="table_surface" geom2="paddle_geom" condim="1" friction="0 0 0 0 0" solref="0.008 1.0" solimp="0.9 0.95 0.005"/>
+  </contact>
+
+  <keyframe>
+    <!-- Ready pose: paddle at x = -1.75, y = 0.0, z = 0.035 on the table -->
+    <key name="ready" qpos="-0.3928 -0.6889 2.5286 -3.4078 -1.5709 -0.3936 0.0 0.0 0.0"
+         ctrl="-0.3928 -0.6889 2.5286 -3.4078 -1.5709 -0.3936"/>
+  </keyframe>
+</mujoco>

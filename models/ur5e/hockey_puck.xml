@@ -1,0 +1,16 @@
+<mujoco model="hockey_puck">
+  <asset>
+    <material name="puck_mat" rgba="0.9 0.1 0.1 1.0" reflectance="0.5"/>
+  </asset>
+
+  <worldbody>
+    <!-- Hockey Puck (3-DOF Planar: Slide X, Slide Y, Hinge Z) -->
+    <body name="hockey_puck" pos="-0.5 0.0 0.015">
+      <joint name="puck_x" type="slide" axis="1 0 0" damping="0.0"/>
+      <joint name="puck_y" type="slide" axis="0 1 0" damping="0.0"/>
+      <joint name="puck_rot" type="hinge" axis="0 0 1" damping="0.0"/>
+      <geom name="puck_geom" type="cylinder" size="0.06 0.015" mass="0.17" material="puck_mat"
+        contype="1" conaffinity="1" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+    </body>
+  </worldbody>
+</mujoco>

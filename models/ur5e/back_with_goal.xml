@@ -1,0 +1,20 @@
+<mujoco model="back_with_goal">
+  <worldbody>
+    <!-- Opponent Back Wall split with center Goal Opening:
+         Goal span: Y in [-0.25, 0.25] (width = 0.50 m)
+         Left post wall:  pos = [2.0, 0.60, 0.10], size = [0.05, 0.35, 0.10] -> covers Y in [0.25, 0.95]
+         Right post wall: pos = [2.0, -0.60, 0.10], size = [0.05, 0.35, 0.10] -> covers Y in [-0.95, -0.25]
+    -->
+    <geom name="front_wall_left" type="box" pos="2.0 0.60 0.10" size="0.05 0.35 0.10" material="wall_mat"/>
+    <geom name="front_wall_right" type="box" pos="2.0 -0.60 0.10" size="0.05 0.35 0.10" material="wall_mat"/>
+
+    <!-- Goal Target Zone Sensor / Visual indicator inside goal opening -->
+    <site name="goal_target" pos="2.0 0.0 0.02" size="0.08 0.25 0.01" type="box" material="goal_mat"/>
+  </worldbody>
+
+  <contact>
+    <!-- Frictionless, perfectly elastic puck rebounds with wall posts -->
+    <pair geom1="front_wall_left" geom2="puck_geom" condim="1" friction="0 0 0 0 0" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+    <pair geom1="front_wall_right" geom2="puck_geom" condim="1" friction="0 0 0 0 0" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+  </contact>
+</mujoco>

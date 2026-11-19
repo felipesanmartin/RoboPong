@@ -1,0 +1,13 @@
+<mujoco model="side_walls">
+  <worldbody>
+    <!-- Lateral Side Rebound Walls at Y = +/- 0.90 m -->
+    <geom name="left_wall" type="box" pos="0.0 0.90 0.10" size="2.05 0.05 0.10" material="wall_mat"/>
+    <geom name="right_wall" type="box" pos="0.0 -0.90 0.10" size="2.05 0.05 0.10" material="wall_mat"/>
+  </worldbody>
+
+  <contact>
+    <!-- Frictionless, perfectly elastic puck rebounds with side walls -->
+    <pair geom1="left_wall" geom2="puck_geom" condim="1" friction="0 0 0 0 0" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+    <pair geom1="right_wall" geom2="puck_geom" condim="1" friction="0 0 0 0 0" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+  </contact>
+</mujoco>

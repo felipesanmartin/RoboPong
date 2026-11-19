@@ -42,9 +42,15 @@ RoboPong/
 │   └── run_ur5e.py                    # Trained policy evaluator & interactive visualizer
 ├── models/                            # Simulation descriptions and meshes
 │   └── ur5e/
-│       ├── hockey_ur5e_world_walled.xml
-│       ├── hockey_ur5e_world.xml
-│       ├── ur5e.xml
+│       ├── hockey_ur5e_base.xml       # Base setup: table surface, lighting, cameras, UR5e robot (no walls)
+│       ├── ur5e_paddle.xml            # Modular UR5e arm with hockey striker paddle & PD actuators
+│       ├── hockey_puck.xml            # Modular 3-DOF planar air hockey puck
+│       ├── back_wall.xml              # Modular solid front/rebound wall (+X = 2.0 m)
+│       ├── side_walls.xml             # Modular lateral boundary rebound walls (Y = +/- 0.90 m)
+│       ├── back_with_goal.xml         # Modular back wall with 0.50 m goal opening & target sensor
+│       ├── hockey_ur5e_world.xml      # Open-court rebound arena (base + puck + back_wall)
+│       ├── hockey_ur5e_world_walled.xml # Walled rebound arena (base + puck + back_wall + side_walls)
+│       ├── hockey_ur5e_goal_world.xml # Air hockey goal shooting arena (base + puck + back_with_goal + side_walls)
 │       └── assets/                    # Robot link 3D mesh assets (.obj)
 └── saved_models/                      # Checkpoints, logs, and evaluation models
     └── ur5e_ppo/
