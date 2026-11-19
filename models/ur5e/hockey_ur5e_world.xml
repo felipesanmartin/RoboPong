@@ -1,0 +1,197 @@
+<mujoco model="hockey_ur5e_world">
+  <compiler angle="radian" meshdir="assets" autolimits="true"/>
+
+  <option timestep="0.001" gravity="0 0 -9.81" integrator="implicitfast" iterations="100" tolerance="1e-6">
+    <flag contact="enable" energy="enable"/>
+  </option>
+
+  <default>
+    <!-- Frictionless, highly elastic defaults for air hockey simulation -->
+    <geom condim="3" friction="0.0 0.0 0.0" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+    <joint damping="0.0" armature="0.0"/>
+
+    <default class="ur5e">
+      <material specular="0.5" shininess="0.25"/>
+      <joint axis="0 1 0" range="-6.28319 6.28319" armature="0.1" damping="1.0"/>
+      <general gaintype="fixed" biastype="affine" ctrlrange="-6.2831 6.2831" gainprm="4000" biasprm="0 -4000 -400"
+        forcerange="-150 150"/>
+      <default class="size3">
+        <default class="size3_limited">
+          <joint range="-3.1415 3.1415"/>
+          <general ctrlrange="-3.1415 3.1415"/>
+        </default>
+      </default>
+      <default class="size1">
+        <general gainprm="1500" biasprm="0 -1500 -100" forcerange="-28 28"/>
+      </default>
+      <default class="visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+      </default>
+      <default class="collision">
+        <geom type="capsule" group="3"/>
+        <default class="eef_collision">
+          <geom type="cylinder"/>
+        </default>
+      </default>
+      <site size="0.001" rgba="0.5 0.5 0.5 0.3" group="4"/>
+    </default>
+  </default>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.4 0.6 0.8" rgb2="0.1 0.15 0.25" width="512" height="512"/>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1="0.88 0.94 0.98" rgb2="0.80 0.90 0.96"/>
+    <material name="table_mat" texture="grid" texrepeat="6 3" reflectance="0.2"/>
+    <material name="wall_mat" rgba="0.2 0.25 0.35 1.0" reflectance="0.3"/>
+    <material name="paddle_mat" rgba="0.0 0.7 0.9 1.0" reflectance="0.4"/>
+    <material name="puck_mat" rgba="0.9 0.1 0.1 1.0" reflectance="0.5"/>
+    <material name="pedestal_mat" rgba="0.18 0.20 0.24 1.0"/>
+
+    <material class="ur5e" name="black" rgba="0.033 0.033 0.033 1"/>
+    <material class="ur5e" name="jointgray" rgba="0.278 0.278 0.278 1"/>
+    <material class="ur5e" name="linkgray" rgba="0.82 0.82 0.82 1"/>
+    <material class="ur5e" name="urblue" rgba="0.49 0.678 0.8 1"/>
+
+    <mesh file="base_0.obj"/>
+    <mesh file="base_1.obj"/>
+    <mesh file="shoulder_0.obj"/>
+    <mesh file="shoulder_1.obj"/>
+    <mesh file="shoulder_2.obj"/>
+    <mesh file="upperarm_0.obj"/>
+    <mesh file="upperarm_1.obj"/>
+    <mesh file="upperarm_2.obj"/>
+    <mesh file="upperarm_3.obj"/>
+    <mesh file="forearm_0.obj"/>
+    <mesh file="forearm_1.obj"/>
+    <mesh file="forearm_2.obj"/>
+    <mesh file="forearm_3.obj"/>
+    <mesh file="wrist1_0.obj"/>
+    <mesh file="wrist1_1.obj"/>
+    <mesh file="wrist1_2.obj"/>
+    <mesh file="wrist2_0.obj"/>
+    <mesh file="wrist2_1.obj"/>
+    <mesh file="wrist2_2.obj"/>
+    <mesh file="wrist3.obj"/>
+  </asset>
+
+  <worldbody>
+    <!-- Directional Light and Ambient Shadows -->
+    <light directional="true" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3" pos="0 0 5" dir="0 0 -1" castshadow="true"/>
+
+    <!-- Cameras -->
+    <camera name="top_down" pos="0 0 5.5" xyaxes="0 1 0 -1 0 0"/>
+    <camera name="behind_robot" pos="-3.8 0 2.2" xyaxes="0 1 0 -0.45 0 -0.892"/>
+    <camera name="side_view" pos="-0.5 -3.0 2.0" xyaxes="1 0 0 0 0.55 -0.835"/>
+
+    <!-- Frictionless Air Hockey Table Surface (Damped Support Plane, excludes Puck) -->
+    <geom name="table_surface" type="plane" pos="0 0 0" size="3.0 1.5 0.1" material="table_mat"
+      contype="2" conaffinity="2" solref="0.004 1.0" solimp="0.95 0.99 0.003"/>
+
+    <!-- Solid Front Rebound Wall at +X = 2.0 m -->
+    <geom name="front_wall" type="box" pos="2.0 0.0 0.10" size="0.05 1.5 0.10" material="wall_mat"/>
+
+    <!-- UR5e Robot Manipulator on Table Pedestal -->
+    <body name="pedestal" pos="-2.10 0.0 0.10">
+      <geom name="pedestal_geom" type="cylinder" size="0.14 0.10" material="pedestal_mat" contype="0" conaffinity="0"/>
+
+      <body name="base" pos="0 0 0.10" quat="1 0 0 0" childclass="ur5e">
+        <inertial mass="4.0" pos="0 0 0" diaginertia="0.00443333156 0.00443333156 0.0072"/>
+        <geom mesh="base_0" material="black" class="visual"/>
+        <geom mesh="base_1" material="jointgray" class="visual"/>
+        <body name="shoulder_link" pos="0 0 0.163">
+          <inertial mass="3.7" pos="0 0 0" diaginertia="0.0102675 0.0102675 0.00666"/>
+          <joint name="shoulder_pan_joint" class="size3" axis="0 0 1"/>
+          <geom mesh="shoulder_0" material="urblue" class="visual"/>
+          <geom mesh="shoulder_1" material="black" class="visual"/>
+          <geom mesh="shoulder_2" material="jointgray" class="visual"/>
+          <geom class="collision" size="0.06 0.06" pos="0 0 -0.04"/>
+          <body name="upper_arm_link" pos="0 0.138 0" quat="1 0 1 0">
+            <inertial mass="8.393" pos="0 0 0.2125" diaginertia="0.133886 0.133886 0.0151074"/>
+            <joint name="shoulder_lift_joint" class="size3"/>
+            <geom mesh="upperarm_0" material="linkgray" class="visual"/>
+            <geom mesh="upperarm_1" material="black" class="visual"/>
+            <geom mesh="upperarm_2" material="jointgray" class="visual"/>
+            <geom mesh="upperarm_3" material="urblue" class="visual"/>
+            <geom class="collision" pos="0 -0.04 0" quat="1 1 0 0" size="0.06 0.06"/>
+            <geom class="collision" size="0.05 0.2" pos="0 0 0.2"/>
+            <body name="forearm_link" pos="0 -0.131 0.425">
+              <inertial mass="2.275" pos="0 0 0.196" diaginertia="0.0311796 0.0311796 0.004095"/>
+              <joint name="elbow_joint" class="size3_limited"/>
+              <geom mesh="forearm_0" material="urblue" class="visual"/>
+              <geom mesh="forearm_1" material="linkgray" class="visual"/>
+              <geom mesh="forearm_2" material="black" class="visual"/>
+              <geom mesh="forearm_3" material="jointgray" class="visual"/>
+              <geom class="collision" pos="0 0.08 0" quat="1 1 0 0" size="0.055 0.06"/>
+              <geom class="collision" size="0.038 0.19" pos="0 0 0.2"/>
+              <body name="wrist_1_link" pos="0 0 0.392" quat="1 0 1 0">
+                <inertial mass="1.219" pos="0 0.127 0" diaginertia="0.0025599 0.0025599 0.0021942"/>
+                <joint name="wrist_1_joint" class="size1"/>
+                <geom mesh="wrist1_0" material="black" class="visual"/>
+                <geom mesh="wrist1_1" material="urblue" class="visual"/>
+                <geom mesh="wrist1_2" material="jointgray" class="visual"/>
+                <geom class="collision" pos="0 0.05 0" quat="1 1 0 0" size="0.04 0.07"/>
+                <body name="wrist_2_link" pos="0 0.127 0">
+                  <inertial mass="1.219" pos="0 0 0.1" diaginertia="0.0025599 0.0025599 0.0021942"/>
+                  <joint name="wrist_2_joint" axis="0 0 1" class="size1"/>
+                  <geom mesh="wrist2_0" material="black" class="visual"/>
+                  <geom mesh="wrist2_1" material="urblue" class="visual"/>
+                  <geom mesh="wrist2_2" material="jointgray" class="visual"/>
+                  <geom class="collision" size="0.04 0.06" pos="0 0 0.04"/>
+                  <geom class="collision" pos="0 0.02 0.1" quat="1 1 0 0" size="0.04 0.04"/>
+                  <body name="wrist_3_link" pos="0 0 0.1">
+                    <inertial mass="0.1889" pos="0 0.0771683 0" quat="1 0 0 1"
+                      diaginertia="0.000132134 9.90863e-05 9.90863e-05"/>
+                    <joint name="wrist_3_joint" class="size1"/>
+                    <geom material="linkgray" mesh="wrist3" class="visual"/>
+                    <geom class="eef_collision" pos="0 0.08 0" quat="1 1 0 0" size="0.04 0.02"/>
+
+                    <!-- Hockey Paddle Striker attached to Tool Flange -->
+                    <site name="attachment_site" pos="0 0.1 0" quat="-1 1 0 0"/>
+                    <body name="paddle_tool" pos="0 0.1 0" quat="-1 1 0 0">
+                      <geom name="paddle_stem" type="cylinder" size="0.015 0.05" pos="0 0 0.05" rgba="0.3 0.35 0.4 1.0" contype="0" conaffinity="0"/>
+                      <geom name="paddle_geom" type="cylinder" size="0.08 0.035" pos="0 0 0.12" material="paddle_mat"
+                        contype="3" conaffinity="3" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+                      <site name="paddle_site" pos="0 0 0.12"/>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+    <!-- Hockey Puck (3-DOF Planar: Slide X, Slide Y, Hinge Z) -->
+    <body name="hockey_puck" pos="-0.5 0.0 0.015">
+      <joint name="puck_x" type="slide" axis="1 0 0" damping="0.0"/>
+      <joint name="puck_y" type="slide" axis="0 1 0" damping="0.0"/>
+      <joint name="puck_rot" type="hinge" axis="0 0 1" damping="0.0"/>
+      <geom name="puck_geom" type="cylinder" size="0.06 0.015" mass="0.17" material="puck_mat"
+        contype="1" conaffinity="1" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+    </body>
+  </worldbody>
+
+  <contact>
+    <!-- Frictionless, critically damped table support: stops paddle penetration with zero sliding friction -->
+    <pair geom1="table_surface" geom2="paddle_geom" condim="1" friction="0 0 0 0 0" solref="0.008 1.0" solimp="0.9 0.95 0.005"/>
+    <!-- Frictionless, perfectly elastic rebound with front wall -->
+    <pair geom1="front_wall" geom2="puck_geom" condim="1" friction="0 0 0 0 0" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+    <!-- Frictionless, crisp elastic paddle strikes -->
+    <pair geom1="paddle_geom" geom2="puck_geom" condim="1" friction="0 0 0 0 0" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+  </contact>
+
+  <actuator>
+    <general class="size3" name="shoulder_pan" joint="shoulder_pan_joint"/>
+    <general class="size3" name="shoulder_lift" joint="shoulder_lift_joint"/>
+    <general class="size3_limited" name="elbow" joint="elbow_joint"/>
+    <general class="size1" name="wrist_1" joint="wrist_1_joint"/>
+    <general class="size1" name="wrist_2" joint="wrist_2_joint"/>
+    <general class="size1" name="wrist_3" joint="wrist_3_joint"/>
+  </actuator>
+
+  <keyframe>
+    <!-- Ready pose: paddle at x = -1.75, y = 0.0, z = 0.035 on the table -->
+    <key name="ready" qpos="-0.3928 -0.6889 2.5286 -3.4078 -1.5709 -0.3936 0.0 0.0 0.0"
+         ctrl="-0.3928 -0.6889 2.5286 -3.4078 -1.5709 -0.3936"/>
+  </keyframe>
+</mujoco>

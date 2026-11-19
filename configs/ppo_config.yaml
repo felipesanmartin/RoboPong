@@ -1,0 +1,27 @@
+# PPO Training Configuration for 6-DOF UR5e Air Hockey Rebound
+
+env:
+  side_walls: true
+  use_camera: false
+  frame_skip: 20
+  max_episode_steps: 500
+
+ppo:
+  learning_rate: 0.003
+  n_steps: 2048
+  batch_size: 128
+  n_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.005
+  net_arch:
+    pi: [256, 256]
+    vf: [256, 256]
+
+training:
+  total_timesteps: 1000000
+  num_envs: 8
+  seed: 42
+  eval_freq: 2500
+  save_freq: 10000

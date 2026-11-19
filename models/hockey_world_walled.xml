@@ -1,0 +1,77 @@
+<mujoco model="hockey_world">
+  <compiler angle="radian" coordinate="local"/>
+
+  <option timestep="0.001" gravity="0 0 -9.81" iterations="50" tolerance="1e-8">
+    <flag contact="enable" energy="enable"/>
+  </option>
+
+  <default>
+    <!-- Frictionless, perfectly elastic defaults for air hockey simulation -->
+    <geom condim="3" friction="0.0 0.0 0.0" solref="-500000 0" solimp="0.999 0.999 0.0001"/>
+    <joint damping="0.0" armature="0.0"/>
+  </default>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.4 0.6 0.8" rgb2="0.1 0.15 0.25" width="512" height="512"/>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1="0.88 0.94 0.98" rgb2="0.80 0.90 0.96"/>
+    <material name="table_mat" texture="grid" texrepeat="6 4" reflectance="0.2"/>
+    <material name="wall_mat" rgba="0.2 0.25 0.35 1.0" reflectance="0.3"/>
+    <material name="paddle_mat" rgba="0.0 0.7 0.9 1.0" reflectance="0.4"/>
+    <material name="puck_mat" rgba="0.9 0.1 0.1 1.0" reflectance="0.5"/>
+    <material name="slider_mat" rgba="0.6 0.6 0.7 1.0" reflectance="0.5"/>
+    <material name="rail_mat" rgba="0.25 0.25 0.25 1.0"/>
+  </asset>
+
+  <worldbody>
+    <!-- Directional Light -->
+    <light directional="true" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3" pos="0 0 5" dir="0 0 -1" castshadow="true"/>
+
+    <!-- Cameras -->
+    <camera name="top_down" pos="0 0 5.5" xyaxes="0 1 0 -1 0 0"/>
+    <camera name="behind_robot" pos="-3.8 0 2.2" xyaxes="0 1 0 -0.5 0 -0.866"/>
+
+    <!-- Frictionless Air Hockey Table Surface -->
+    <geom name="table_surface" type="plane" pos="0 0 0" size="3.0 2.0 0.1" material="table_mat"/>
+
+    <!-- Solid Front Rebound Wall at +X = 2.0 m -->
+    <geom name="front_wall" type="box" pos="2.0 0.0 0.10" size="0.10 2.0 0.10" material="wall_mat"/>
+
+    <!-- Side Boundary Rebound Walls at Y = +/- 2.0 m -->
+    <geom name="left_wall" type="box" pos="-0.10 2.0 0.10" size="2.10 0.05 0.10" material="wall_mat"/>
+    <geom name="right_wall" type="box" pos="-0.10 -2.0 0.10" size="2.10 0.05 0.10" material="wall_mat"/>
+
+    <!-- Robot Base Guide Rail (Fixed visual at X = -2.0 m) -->
+    <geom name="base_rail" type="box" pos="-2.0 0.0 0.005" size="0.02 1.7 0.005" material="rail_mat" contype="0" conaffinity="0"/>
+
+    <!-- Paddle Robot (Prismatic Slider + Revolute Bar) -->
+    <body name="slider_link" pos="-2.0 0.0 0.02">
+      <!-- Prismatic Slide Joint along Y axis -->
+      <joint name="slide_joint" type="slide" axis="0 1 0" range="-1.6 1.6" limited="true" damping="0.0"/>
+      <!-- Slider carriage geometry -->
+      <geom name="slider_geom" type="cylinder" size="0.04 0.01" material="slider_mat" contype="0" conaffinity="0"/>
+
+      <!-- Paddle Link (rotates around Z axis) -->
+      <body name="paddle_link" pos="0.0 0.0 0.02">
+        <!-- Revolute Joint around Z axis -->
+        <joint name="rotate_joint" type="hinge" axis="0 0 1" range="-1.5708 1.5708" limited="true" damping="0.0"/>
+        <!-- Paddle geometry: length 0.65 m, width 0.10 m, thickness 0.08 m -->
+        <geom name="paddle_geom" type="box" size="0.05 0.325 0.04" mass="50.0" material="paddle_mat"/>
+      </body>
+    </body>
+
+    <!-- Hockey Puck (3-DOF Planar: Slide X, Slide Y, Hinge Z) -->
+    <body name="hockey_puck" pos="-0.5 0.0 0.015">
+      <joint name="puck_x" type="slide" axis="1 0 0" damping="0.0"/>
+      <joint name="puck_y" type="slide" axis="0 1 0" damping="0.0"/>
+      <joint name="puck_rot" type="hinge" axis="0 0 1" damping="0.0"/>
+      <!-- Puck geometry: radius 0.06 m, height 0.03 m, mass 0.17 kg -->
+      <geom name="puck_geom" type="cylinder" size="0.06 0.015" mass="0.17" material="puck_mat"/>
+    </body>
+  </worldbody>
+
+  <!-- Actuators: Velocity control for slide and rotate joints -->
+  <actuator>
+    <velocity name="slide_actuator" joint="slide_joint" kv="5000" ctrlrange="-3.0 3.0"/>
+    <velocity name="rotate_actuator" joint="rotate_joint" kv="500" ctrlrange="-5.0 5.0"/>
+  </actuator>
+</mujoco>
