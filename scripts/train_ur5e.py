@@ -7,6 +7,7 @@ PPO policy on the UR5e manipulator environment.
 Usage (from RoboPong/ directory):
     python3 scripts/train_ur5e.py --timesteps 1000000 --num_envs 8
     python3 scripts/train_ur5e.py --config configs/ppo_config.yaml
+    python3 scripts/train_ur5e.py --reward dense
 """
 
 import argparse
@@ -27,6 +28,7 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from envs.hockey_ur5e_env import HockeyUR5eEnv
+from envs.rewards import REWARD_TYPES
 
 
 def load_config(config_path: str = "") -> dict:
@@ -58,6 +60,7 @@ def main(args: argparse.Namespace):
     cfg_env = cfg.get("env", {})
     cfg_ppo = cfg.get("ppo", {})
     cfg_train = cfg.get("training", {})
+    cfg_reward = cfg.get("reward", {})
 
     # CLI args override YAML config
     side_walls_val = (
@@ -67,10 +70,17 @@ def main(args: argparse.Namespace):
     )
     total_timesteps = args.timesteps if args.timesteps is not None else cfg_train.get("total_timesteps", 1000000)
     num_envs = args.num_envs if args.num_envs is not None else cfg_train.get("num_envs", 8)
-    lr = args.lr if args.lr is not None else cfg_ppo.get("learning_rate", 3e-3)
+    lr = args.lr if args.lr is not None else cfg_ppo.get("learning_rate", 3e-4)
     seed = args.seed if args.seed is not None else cfg_train.get("seed", 42)
+    reward_type = args.reward or cfg_reward.get("type", "rebound")
+    reward_params = dict(cfg_reward.get(reward_type) or {})
+    if reward_type == "dense":
+        # Dense shaping needs the same discount as PPO
+        reward_params["gamma"] = cfg_ppo.get("gamma", 0.99)
 
-    save_dir = args.save_dir or os.path.join(_project_root, "saved_models", "ur5e_ppo")
+    # Rebound keeps the original directory so run_ur5e.py still finds its models
+    default_dir = "ur5e_ppo" if reward_type == "rebound" else f"ur5e_ppo_{reward_type}"
+    save_dir = args.save_dir or os.path.join(_project_root, "saved_models", default_dir)
     log_dir = os.path.join(save_dir, "logs")
     checkpoint_dir = os.path.join(save_dir, "checkpoints")
     best_model_dir = os.path.join(save_dir, "best_model")
@@ -87,28 +97,44 @@ def main(args: argparse.Namespace):
     print(
         f"Side Walls:      {'ENABLED (rebound bank shots)' if side_walls_val else 'DISABLED (open court)'}"
     )
+    print(f"Reward:          {reward_type} {reward_params or ''}")
     print(f"Learning Rate:   {lr}")
     print(f"Save Directory:  {save_dir}")
     print("=" * 68)
+
+    env_kwargs = dict(
+        side_walls=side_walls_val,
+        use_camera=cfg_env.get("use_camera", False),
+        reward_type=reward_type,
+        reward_params=reward_params,
+    )
+    # Logged for every reward so runs can be compared
+    monitor_keys = ("rebounds", "wall_hits")
 
     # 1. Vectorized parallel training environments
     vec_env = make_vec_env(
         HockeyUR5eEnv,
         n_envs=num_envs,
         seed=seed,
-        env_kwargs=dict(side_walls=side_walls_val, use_camera=cfg_env.get("use_camera", False)),
+        env_kwargs=env_kwargs,
         vec_env_cls=SubprocVecEnv if num_envs > 1 else None,
+        # fork lets workers share the parent's loaded libraries, which saves RAM
+        vec_env_kwargs=dict(start_method="fork") if num_envs > 1 else None,
     )
-    vec_env = VecMonitor(vec_env, filename=os.path.join(log_dir, "train_monitor.csv"))
+    vec_env = VecMonitor(
+        vec_env, filename=os.path.join(log_dir, "train_monitor.csv"), info_keywords=monitor_keys
+    )
 
     # 2. Evaluation environment
     eval_env = make_vec_env(
         HockeyUR5eEnv,
         n_envs=1,
         seed=seed + 100,
-        env_kwargs=dict(side_walls=side_walls_val, use_camera=cfg_env.get("use_camera", False)),
+        env_kwargs=env_kwargs,
     )
-    eval_env = VecMonitor(eval_env, filename=os.path.join(log_dir, "eval_monitor.csv"))
+    eval_env = VecMonitor(
+        eval_env, filename=os.path.join(log_dir, "eval_monitor.csv"), info_keywords=monitor_keys
+    )
 
     # 3. Callbacks: periodic evaluation and model checkpoints
     eval_freq = cfg_train.get("eval_freq", max(25000 // num_envs, 2000))
@@ -146,6 +172,7 @@ def main(args: argparse.Namespace):
         gae_lambda=cfg_ppo.get("gae_lambda", 0.95),
         clip_range=cfg_ppo.get("clip_range", 0.2),
         ent_coef=cfg_ppo.get("ent_coef", 0.005),
+        target_kl=cfg_ppo.get("target_kl"),
         policy_kwargs=policy_kwargs,
         verbose=1,
         seed=seed,
@@ -216,6 +243,13 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Include lateral side rebound walls (true/false, overrides config if provided)",
+    )
+    parser.add_argument(
+        "--reward",
+        type=str,
+        choices=REWARD_TYPES,
+        default=None,
+        help="Reward function (overrides config reward.type if provided)",
     )
     parser.add_argument(
         "--save_dir",

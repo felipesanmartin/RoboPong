@@ -6,14 +6,43 @@ env:
   frame_skip: 20
   max_episode_steps: 500
 
+reward:
+  type: rebound  # rebound, sparse or dense
+  rebound:
+    w_align: 2.0
+    sigma_align: 0.08
+    w_strike: 1.5
+    target_tti: 0.12
+    sigma_tti: 0.05
+    w_center: 0.5
+    sigma_center: 0.20
+    w_rebound: 35.0
+    w_speed: 3.5
+    w_deflect: 1.0
+    w_goal_conceded: 25.0
+    w_boundary: 10.0
+    w_action_reg: 0.003
+    puck_approach_vx: -0.2
+    min_rebound_vx: 0.3
+    max_rebound_vel: 8.0
+  sparse:
+    hit_reward: 1.0
+  dense:
+    w_eef_puck: 2.0  # lateral distance only
+    w_puck_wall: 0.2
+    w_wall_hit: 30.0
+    w_time: 0.01
+    w_miss: 100.0
+
 ppo:
-  learning_rate: 0.003
+  learning_rate: 0.0003
   n_steps: 2048
   batch_size: 128
   n_epochs: 10
   gamma: 0.99
   gae_lambda: 0.95
   clip_range: 0.2
+  target_kl: 0.03  # stops an update early if the policy changes too much
   ent_coef: 0.005
   net_arch:
     pi: [256, 256]

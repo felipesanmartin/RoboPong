@@ -92,6 +92,13 @@ class BaseUR5eEnv(gym.Env, ABC):
         self.puck_geom_id = self.model.geom("puck_geom").id
         self.puck_body_id = self.model.body("hockey_puck").id
         self.site_id = self.model.site("paddle_site").id
+        self.back_wall_geom_ids = {
+            self.model.geom(name).id
+            for name in ("front_wall", "front_wall_left", "front_wall_right")
+            if mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, name) >= 0
+        }
+        # x position of the back wall's inner face
+        self.back_wall_x = 1.95
 
         # Workspace limits on table surface (Z = 0.035 m)
         self.x_bounds = (-1.88, -1.45)
@@ -122,6 +129,8 @@ class BaseUR5eEnv(gym.Env, ABC):
         self.q_cmd = np.zeros(6, dtype=np.float64)
         self.prev_paddle_pos = np.zeros(2, dtype=np.float64)
         self.paddle_vel = np.zeros(2, dtype=np.float64)
+        # True if the puck touched the back wall during the last apply_action()
+        self.wall_contact_detected = False
 
         # Viewer handle
         self.viewer = None
@@ -132,12 +141,19 @@ class BaseUR5eEnv(gym.Env, ABC):
         vel = self.paddle_vel.copy()
         return pos, vel
 
-    def get_puck_state(self) -> Tuple[float, float, float, float]:
+    def get_puck_state(self, ground_truth: bool = False) -> Tuple[float, float, float, float]:
         """Get puck position (x, y) and velocity (vx, vy).
 
         Uses offscreen camera detector if use_camera is enabled; otherwise uses
         simulator ground-truth physics state.
         """
+        if ground_truth:
+            return (
+                -0.5 + float(self.data.qpos[6]),
+                float(self.data.qpos[7]),
+                float(self.data.qvel[6]),
+                float(self.data.qvel[7]),
+            )
         if self.use_camera and self.detector is not None:
             puck_x, puck_y, puck_vx, puck_vy, self.last_camera_frame, _ = (
                 self.detector.detect(self.data)
@@ -188,22 +204,23 @@ class BaseUR5eEnv(gym.Env, ABC):
 
         # 3. Physics Substepping with gravity compensation
         contact_detected = False
+        self.wall_contact_detected = False
         for _ in range(self.frame_skip):
             self.data.qfrc_applied[:6] = self.kin.get_gravity_compensation(self.data)
             mujoco.mj_step(self.model, self.data)
 
-            if not contact_detected:
-                for c in range(self.data.ncon):
-                    con = self.data.contact[c]
-                    if (
-                        con.geom1 == self.paddle_geom_id
-                        and con.geom2 == self.puck_geom_id
-                    ) or (
-                        con.geom1 == self.puck_geom_id
-                        and con.geom2 == self.paddle_geom_id
-                    ):
-                        contact_detected = True
-                        break
+            for c in range(self.data.ncon):
+                con = self.data.contact[c]
+                if con.geom1 == self.puck_geom_id:
+                    other = con.geom2
+                elif con.geom2 == self.puck_geom_id:
+                    other = con.geom1
+                else:
+                    continue
+                if other == self.paddle_geom_id:
+                    contact_detected = True
+                elif other in self.back_wall_geom_ids:
+                    self.wall_contact_detected = True
 
         # 4. Measure paddle actual velocity
         curr_paddle_pos = self.data.site_xpos[self.site_id][:2].copy()

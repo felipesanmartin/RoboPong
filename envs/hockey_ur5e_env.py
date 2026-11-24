@@ -31,6 +31,7 @@ from envs.rewards import (
     BaseRewardFunction,
     ReboundRewardFunction,
     ReboundRewardWeights,
+    make_reward_function,
 )
 
 
@@ -52,6 +53,8 @@ class HockeyUR5eEnv(BaseUR5eEnv):
         render_mode: Optional[str] = None,
         reward_weights: Optional[ReboundRewardWeights] = None,
         reward_function: Optional[BaseRewardFunction] = None,
+        reward_type: str = "rebound",
+        reward_params: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             model_path=model_path,
@@ -69,11 +72,19 @@ class HockeyUR5eEnv(BaseUR5eEnv):
         )
         if reward_function is not None:
             self.reward_fn = reward_function
-        else:
+        elif reward_type == "rebound" and not reward_params:
             self.reward_fn = ReboundRewardFunction(
                 weights=self.reward_weights,
                 base_xe=self.base_xe,
                 side_walls=self.side_walls,
+            )
+        else:
+            self.reward_fn = make_reward_function(
+                reward_type,
+                reward_params,
+                base_xe=self.base_xe,
+                side_walls=self.side_walls,
+                back_wall_x=self.back_wall_x,
             )
 
         # Observation space: 23 dimensions
@@ -105,14 +116,17 @@ class HockeyUR5eEnv(BaseUR5eEnv):
         self.rebounds = 0
         self.last_contact_time = -1.0
         self.prev_puck_vx = 0.0
+        self.wall_hits = 0
+        self.last_wall_hit_time = -1.0
+        self.prev_wall_contact = False
 
-    def _get_obs(self) -> np.ndarray:
+    def _get_obs(self, ground_truth: bool = False) -> np.ndarray:
         """Construct the 23-dimensional state observation."""
         paddle_pos, paddle_vel = self.get_paddle_state()
         pad_x, pad_y = paddle_pos[0], paddle_pos[1]
         pad_vx, pad_vy = paddle_vel[0], paddle_vel[1]
 
-        puck_x, puck_y, puck_vx, puck_vy = self.get_puck_state()
+        puck_x, puck_y, puck_vx, puck_vy = self.get_puck_state(ground_truth=ground_truth)
 
         rel_x = puck_x - pad_x
         rel_y = puck_y - pad_y
@@ -144,6 +158,9 @@ class HockeyUR5eEnv(BaseUR5eEnv):
         self.step_count = 0
         self.rebounds = 0
         self.last_contact_time = -1.0
+        self.wall_hits = 0
+        self.last_wall_hit_time = -1.0
+        self.prev_wall_contact = False
 
         # Reset UR5e to ready keyframe
         self.reset_robot_ready()
@@ -171,6 +188,7 @@ class HockeyUR5eEnv(BaseUR5eEnv):
         self.paddle_vel = np.zeros(2, dtype=np.float64)
 
         obs = self._get_obs()
+        self.reward_fn.reset(self._get_obs(ground_truth=True) if self.use_camera else obs)
         return obs, {}
 
     def step(
@@ -183,9 +201,11 @@ class HockeyUR5eEnv(BaseUR5eEnv):
 
         # 2. Extract state observation
         obs = self._get_obs()
-        pad_x, pad_y = obs[0], obs[1]
-        puck_x, puck_y = obs[4], obs[5]
-        puck_vx, puck_vy = obs[6], obs[7]
+        # Reward and termination use the true puck state, even when the policy sees the camera estimate
+        gt_obs = self._get_obs(ground_truth=True) if self.use_camera else obs
+        pad_x, pad_y = gt_obs[0], gt_obs[1]
+        puck_x, puck_y = gt_obs[4], gt_obs[5]
+        puck_vx, puck_vy = gt_obs[6], gt_obs[7]
 
         # 3. Rebound tracking (debounced collision check)
         rebound_occurred = False
@@ -194,6 +214,18 @@ class HockeyUR5eEnv(BaseUR5eEnv):
                 self.rebounds += 1
                 self.last_contact_time = self.data.time
                 rebound_occurred = True
+
+        # Count each wall hit once, even if the contact spans several steps
+        wall_contact = self.wall_contact_detected
+        wall_hit = (
+            wall_contact
+            and not self.prev_wall_contact
+            and self.data.time - self.last_wall_hit_time > 0.1
+        )
+        if wall_hit:
+            self.wall_hits += 1
+            self.last_wall_hit_time = self.data.time
+        self.prev_wall_contact = wall_contact
 
         # 4. Check termination conditions
         terminated = False
@@ -218,9 +250,12 @@ class HockeyUR5eEnv(BaseUR5eEnv):
             "side_walls": self.side_walls,
             "rebounds": self.rebounds,
             "step_count": self.step_count,
+            "wall_hit": wall_hit,
+            "wall_hits": self.wall_hits,
+            "terminated": terminated,
         }
         reward = self.get_reward(
-            obs=obs,
+            obs=gt_obs,
             action=action,
             contact_detected=rebound_occurred,
             info=reward_info,
@@ -230,6 +265,7 @@ class HockeyUR5eEnv(BaseUR5eEnv):
 
         info = {
             "rebounds": self.rebounds,
+            "wall_hits": self.wall_hits,
             "step_count": self.step_count,
             "puck_pos": (float(puck_x), float(puck_y)),
             "paddle_pos": (float(pad_x), float(pad_y)),

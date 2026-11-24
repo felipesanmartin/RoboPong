@@ -1,11 +1,16 @@
 from .base_ur5e_env import BaseUR5eEnv
 from .hockey_ur5e_env import HockeyUR5eEnv
 from .rewards import (
+    REWARD_TYPES,
     BaseRewardFunction,
+    DenseWallHitRewardFunction,
+    DenseWallHitRewardWeights,
     GoalScoringRewardFunction,
     ReboundRewardFunction,
     ReboundRewardWeights,
     RewardWeights,
+    SparseWallHitRewardFunction,
+    make_reward_function,
 )
 
 __all__ = [
@@ -16,4 +21,9 @@ __all__ = [
     "RewardWeights",
     "ReboundRewardFunction",
     "GoalScoringRewardFunction",
+    "SparseWallHitRewardFunction",
+    "DenseWallHitRewardWeights",
+    "DenseWallHitRewardFunction",
+    "REWARD_TYPES",
+    "make_reward_function",
 ]

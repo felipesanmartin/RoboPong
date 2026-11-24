@@ -3,6 +3,8 @@
 Defines the abstract BaseRewardFunction interface and concrete implementations:
 - ReboundRewardFunction: Multi-objective reward for returning/rebounding high-speed pucks.
 - GoalScoringRewardFunction: Reward for driving puck toward opponent's goal or target.
+- SparseWallHitRewardFunction: +1 each time the puck hits the back wall.
+- DenseWallHitRewardFunction: Distance shaping + wall-hit bonus + timestep penalty.
 """
 
 from abc import ABC, abstractmethod
@@ -33,6 +35,9 @@ class BaseRewardFunction(ABC):
             Scalar reward float.
         """
         raise NotImplementedError
+
+    def reset(self, obs: np.ndarray) -> None:
+        """Called by the env on reset. Override if the reward keeps state between steps."""
 
 
 @dataclass
@@ -233,3 +238,125 @@ class GoalScoringRewardFunction(BaseRewardFunction):
             reward -= self.action_reg * float(np.sum(action**2))
 
         return float(reward)
+
+
+class SparseWallHitRewardFunction(BaseRewardFunction):
+    """Gives hit_reward each time the puck hits the back wall."""
+
+    def __init__(self, hit_reward: float = 1.0):
+        self.hit_reward = hit_reward
+
+    def compute(
+        self,
+        obs: np.ndarray,
+        action: Optional[np.ndarray],
+        info: Dict[str, Any],
+    ) -> float:
+        return self.hit_reward if info.get("wall_hit", False) else 0.0
+
+
+@dataclass
+class DenseWallHitRewardWeights:
+    """Weights for DenseWallHitRewardFunction.
+
+    Attributes:
+        w_eef_puck: Weight on the lateral paddle-to-puck distance (per meter).
+        w_puck_wall: Weight on the puck-to-back-wall distance (per meter).
+        w_wall_hit: Bonus each time the puck hits the back wall.
+        w_time: Constant penalty every step.
+        w_miss: Penalty when the puck gets past the robot or leaves the table.
+    """
+
+    w_eef_puck: float = 2.0
+    w_puck_wall: float = 0.2
+    w_wall_hit: float = 30.0
+    w_time: float = 0.01
+    w_miss: float = 100.0
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DenseWallHitRewardWeights":
+        valid_keys = {f.name for f in fields(cls)}
+        unknown = set(data) - valid_keys
+        if unknown:
+            raise ValueError(f"Unknown dense reward weights: {sorted(unknown)}")
+        return cls(**{k: float(v) for k, v in data.items()})
+
+
+class DenseWallHitRewardFunction(BaseRewardFunction):
+    """Wall-hit bonus, miss penalty and time penalty, plus distance shaping.
+
+    The distance terms use potential-based shaping, so they speed up learning without
+    changing which policy is optimal (Ng et al., 1999).
+    """
+
+    def __init__(
+        self,
+        weights: Optional[DenseWallHitRewardWeights] = None,
+        back_wall_x: float = 1.95,
+        gamma: float = 0.99,
+    ):
+        self.weights = weights if weights is not None else DenseWallHitRewardWeights()
+        self.back_wall_x = back_wall_x
+        self.gamma = gamma
+        self.prev_phi: Optional[float] = None
+
+    def potential(self, obs: np.ndarray) -> float:
+        # Lateral distance only, since the paddle has little reach in x
+        eef_puck_dist = abs(float(obs[5]) - float(obs[1]))
+        puck_wall_dist = max(0.0, self.back_wall_x - float(obs[4]))
+        return -self.weights.w_eef_puck * eef_puck_dist - self.weights.w_puck_wall * puck_wall_dist
+
+    def reset(self, obs: np.ndarray) -> None:
+        self.prev_phi = self.potential(obs)
+
+    def compute(
+        self,
+        obs: np.ndarray,
+        action: Optional[np.ndarray],
+        info: Dict[str, Any],
+    ) -> float:
+        w = self.weights
+        terminated = bool(info.get("terminated", False))
+
+        # Terminal states have zero potential so the shaping stays unbiased
+        phi = 0.0 if terminated else self.potential(obs)
+        prev_phi = self.potential(obs) if self.prev_phi is None else self.prev_phi
+        reward = self.gamma * phi - prev_phi
+        self.prev_phi = phi
+
+        reward -= w.w_time
+        if info.get("wall_hit", False):
+            reward += w.w_wall_hit
+        if terminated:
+            reward -= w.w_miss
+        return float(reward)
+
+
+REWARD_TYPES = ("rebound", "sparse", "dense")
+
+
+def make_reward_function(
+    reward_type: str,
+    params: Optional[Dict[str, Any]] = None,
+    base_xe: float = -1.75,
+    side_walls: bool = True,
+    back_wall_x: float = 1.95,
+) -> BaseRewardFunction:
+    """Build a reward function by name, using params as its weights."""
+    params = dict(params or {})
+    if reward_type == "rebound":
+        return ReboundRewardFunction(
+            weights=ReboundRewardWeights.from_dict(params),
+            base_xe=base_xe,
+            side_walls=side_walls,
+        )
+    if reward_type == "sparse":
+        return SparseWallHitRewardFunction(**params)
+    if reward_type == "dense":
+        gamma = float(params.pop("gamma", 0.99))
+        return DenseWallHitRewardFunction(
+            weights=DenseWallHitRewardWeights.from_dict(params),
+            back_wall_x=back_wall_x,
+            gamma=gamma,
+        )
+    raise ValueError(f"Unknown reward_type {reward_type!r}; expected one of {REWARD_TYPES}")
