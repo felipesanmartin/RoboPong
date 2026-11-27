@@ -327,7 +327,8 @@ class DenseWallHitRewardFunction(BaseRewardFunction):
         reward -= w.w_time
         if info.get("wall_hit", False):
             reward += w.w_wall_hit
-        if terminated:
+        # The two-arm env sets 'missed' so a lost puck is penalized once, not once per arm
+        if info.get("missed", terminated):
             reward -= w.w_miss
         return float(reward)
 

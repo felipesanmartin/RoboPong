@@ -9,6 +9,8 @@ Usage (from RoboPong/ directory):
     python3 scripts/run_ur5e.py --headless --episodes 100 --modes gt camera \\
         --models rebound=saved_models/ur5e_ppo/ppo_ur5e_final.zip \\
                  sparse=saved_models/ur5e_ppo_sparse/ppo_ur5e_final.zip
+    python3 scripts/run_ur5e.py --env two_arm --reward sparse
+    python3 scripts/run_ur5e.py --env two_arm --reward sparse --independent
 """
 
 import argparse
@@ -17,7 +19,6 @@ import sys
 import time
 
 import numpy as np
-import yaml
 from stable_baselines3 import PPO
 
 # Ensure project root is on python import path
@@ -26,43 +27,46 @@ _project_root = os.path.abspath(os.path.join(_current_dir, ".."))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
+from envs.two_arm_ur5e_env import TwoArmHockeyUR5eEnv
 from envs.hockey_ur5e_env import HockeyUR5eEnv
 from envs.rewards import REWARD_TYPES
+from scripts.train_ur5e import default_model_dir, load_config, reward_params_for
 
 
-def find_default_model(reward_type: str = "rebound") -> str:
-    """Locate the best or final trained UR5e PPO model for the given reward."""
-    sub = "ur5e_ppo" if reward_type == "rebound" else f"ur5e_ppo_{reward_type}"
-    candidates = [
-        os.path.join(_project_root, "saved_models", sub, "best_model", "best_model.zip"),
-        os.path.join(_project_root, "saved_models", sub, "ppo_ur5e_final.zip"),
-        os.path.join(_current_dir, "saved_models", sub, "best_model", "best_model.zip"),
-        os.path.join(_current_dir, "saved_models", sub, "ppo_ur5e_final.zip"),
-    ]
-    for path in candidates:
+def find_default_model(reward_type: str = "rebound", env_type: str = "single") -> str:
+    """Locate the best or final trained UR5e PPO model for the given reward and env."""
+    model_dir = default_model_dir(reward_type, env_type)
+    for path in [
+        os.path.join(model_dir, "best_model", "best_model.zip"),
+        os.path.join(model_dir, "ppo_ur5e_final.zip"),
+    ]:
         if os.path.exists(path):
             return path
     return ""
 
 
-def load_reward_params(args: argparse.Namespace) -> dict:
-    """Read the weights for args.reward from the YAML config."""
-    config_path = args.config or os.path.join(_project_root, "configs", "ppo_config.yaml")
-    cfg = {}
-    if os.path.exists(config_path):
-        with open(config_path, "r") as f:
-            cfg = yaml.safe_load(f) or {}
-    reward_params = dict(cfg.get("reward", {}).get(args.reward) or {})
-    if args.reward == "dense":
-        reward_params["gamma"] = cfg.get("ppo", {}).get("gamma", 0.99)
-    return reward_params
+def make_policy(model, env, deterministic: bool):
+    """Return obs -> action for env, running single-arm policies on each arm of the two-arm env."""
+    single_arm = model.observation_space.shape[0] == 23
+    if isinstance(env, TwoArmHockeyUR5eEnv) and single_arm:
+        low, high = model.observation_space.low, model.observation_space.high
+
+        def act(obs):
+            # Each arm sees only its own observation, clipped like in single-arm training
+            return np.concatenate([
+                model.predict(np.clip(env.local_obs(arm), low, high), deterministic=deterministic)[0]
+                for arm in env.arms
+            ])
+
+        return act
+    return lambda obs: model.predict(obs, deterministic=deterministic)[0]
 
 
-def run_episodes(model, env, args: argparse.Namespace, verbose: bool) -> dict:
+def run_episodes(policy, env, args: argparse.Namespace, verbose: bool) -> dict:
     """Run seeded episodes and collect per-episode results.
 
     Args:
-        model: Trained PPO policy.
+        policy: Function mapping an observation to an action.
         env: HockeyUR5eEnv to run in.
         args: Parsed command-line arguments.
         verbose: Print a line per episode.
@@ -83,7 +87,7 @@ def run_episodes(model, env, args: argparse.Namespace, verbose: bool) -> dict:
         while not done:
             t_start = time.time()
 
-            action, _ = model.predict(obs, deterministic=args.deterministic)
+            action = policy(obs)
             obs, reward, terminated, truncated, info = env.step(action)
             ep_reward += reward
             step_count += 1
@@ -103,11 +107,12 @@ def run_episodes(model, env, args: argparse.Namespace, verbose: bool) -> dict:
         results["wall_hits"].append(info.get("wall_hits", 0))
 
         if verbose:
-            status = "SURVIVED (500 STEPS)" if step_count >= env.max_episode_steps else "MISSED / OUT"
+            status = f"SURVIVED ({env.max_episode_steps} STEPS)" if step_count >= env.max_episode_steps else "MISSED / OUT"
+            hit_label = "Paddle hits" if isinstance(env, TwoArmHockeyUR5eEnv) else "Wall hits"
             print(
-                f"Episode {ep:2d} | Status: {status:20s} | "
+                f"Episode {ep:2d} | Status: {status:21s} | "
                 f"Reward: {ep_reward:7.1f} | Rebounds: {info.get('rebounds', 0):2d} | "
-                f"Wall hits: {info.get('wall_hits', 0):2d} | "
+                f"{hit_label}: {info.get('wall_hits', 0):2d} | "
                 f"Steps: {step_count:3d}"
             )
 
@@ -117,7 +122,7 @@ def run_episodes(model, env, args: argparse.Namespace, verbose: bool) -> dict:
     return results
 
 
-def print_summary(results: dict, max_steps: int):
+def print_summary(results: dict, max_steps: int, hit_label: str = "Wall Hits"):
     """Print the summary block for one model and puck sensor."""
     n = max(1, len(results["rewards"]))
     total_rebounds = sum(results["rebounds"])
@@ -128,7 +133,7 @@ def print_summary(results: dict, max_steps: int):
     print(f"Episodes Completed: {len(results['rewards'])}")
     print(f"Mean Episode Reward: {np.mean(results['rewards']):.1f} +/- {np.std(results['rewards']):.1f}")
     print(f"Total Rebounds:     {total_rebounds} ({total_rebounds / n:.1f} per episode)")
-    print(f"Total Wall Hits:    {total_wall_hits} ({total_wall_hits / n:.1f} per episode)")
+    print(f"Total {hit_label + ':':13s}{total_wall_hits} ({total_wall_hits / n:.1f} per episode)")
     print(f"Survival Rate:      {survived}/{len(results['lengths'])} ({survived / n:.0%})")
     print(f"Mean Episode Length: {np.mean(results['lengths']):.1f} steps")
     print("=" * 68)
@@ -141,12 +146,14 @@ def main(args: argparse.Namespace):
         args: Parsed command-line arguments specifying evaluation settings.
     """
     side_walls = args.side_walls.lower() in ("true", "1", "yes")
-    reward_params = load_reward_params(args)
+    reward_params = reward_params_for(load_config(args.config), args.reward)
 
     if args.models:
         models = dict(spec.split("=", 1) for spec in args.models)
+    elif args.independent:
+        models = {f"{args.reward}_independent": args.model_path or find_default_model(args.reward)}
     else:
-        models = {args.reward: args.model_path or find_default_model(args.reward)}
+        models = {args.reward: args.model_path or find_default_model(args.reward, args.env)}
     for name, path in models.items():
         if not path or not os.path.exists(path):
             print(f"Error: Trained UR5e model '{name}' not found at '{path}'!")
@@ -154,6 +161,9 @@ def main(args: argparse.Namespace):
             sys.exit(1)
 
     modes = args.modes or (["camera"] if args.use_camera else ["gt"])
+    if args.env == "two_arm" and "camera" in modes:
+        print("Error: the two-arm env only supports ground-truth puck state (--modes gt).")
+        sys.exit(1)
     verbose = len(models) == 1 and len(modes) == 1
 
     print("=" * 68)
@@ -162,6 +172,7 @@ def main(args: argparse.Namespace):
         print(f"Model:       {path}" if verbose else f"Model:       {name} = {path}")
     print(f"Side Walls:  {'ENABLED (rebound bank shots)' if side_walls else 'DISABLED (open court)'}")
     print(f"Puck Sensor: {', '.join('BIRD-EYE CAMERA (Color Detector)' if m == 'camera' else 'Ground Truth State' for m in modes)}")
+    print(f"Environment: {args.env}")
     print(f"Reward:      {args.reward}")
     print(f"Episodes:    {args.episodes} (seeds {args.seed_start}-{args.seed_start + args.episodes - 1})")
     print(f"Rendering:   {'Headless' if args.headless else 'Interactive MuJoCo GUI (50 FPS) + Camera Feed'}")
@@ -169,21 +180,30 @@ def main(args: argparse.Namespace):
 
     results = {}
     for mode in modes:
-        env = HockeyUR5eEnv(
-            render_mode=None if args.headless else "human",
-            side_walls=side_walls,
-            use_camera=(mode == "camera"),
-            show_camera=not args.headless,
-            reward_type=args.reward,
-            reward_params=reward_params,
-        )
+        if args.env == "two_arm":
+            env = TwoArmHockeyUR5eEnv(
+                render_mode=None if args.headless else "human",
+                reward_type=args.reward,
+                reward_params=reward_params,
+            )
+        else:
+            env = HockeyUR5eEnv(
+                render_mode=None if args.headless else "human",
+                side_walls=side_walls,
+                use_camera=(mode == "camera"),
+                show_camera=not args.headless,
+                reward_type=args.reward,
+                reward_params=reward_params,
+            )
+        hit_label = "Paddle Hits" if args.env == "two_arm" else "Wall Hits"
         try:
             for name, path in models.items():
                 # Small policy, so CPU keeps the GPU free for other work
-                model = PPO.load(path, env=env, device="cpu")
-                results[(name, mode)] = run_episodes(model, env, args, verbose)
+                model = PPO.load(path, device="cpu")
+                policy = make_policy(model, env, args.deterministic)
+                results[(name, mode)] = run_episodes(policy, env, args, verbose)
                 if verbose:
-                    print_summary(results[(name, mode)], env.max_episode_steps)
+                    print_summary(results[(name, mode)], env.max_episode_steps, hit_label)
                 else:
                     print(f"[{mode}] {name} done", flush=True)
         except KeyboardInterrupt:
@@ -226,6 +246,18 @@ if __name__ == "__main__":
         nargs="+",
         default=[],
         help="Evaluate several models as name=path.zip entries (overrides --model_path)",
+    )
+    parser.add_argument(
+        "--env",
+        type=str,
+        choices=["single", "two_arm"],
+        default="single",
+        help="single-arm rebound task or two-arm task (default: single)",
+    )
+    parser.add_argument(
+        "--independent",
+        action="store_true",
+        help="In the two-arm env, run the single-arm model for --reward on each arm",
     )
     parser.add_argument(
         "--reward",

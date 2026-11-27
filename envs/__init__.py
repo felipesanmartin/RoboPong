@@ -1,4 +1,5 @@
 from .base_ur5e_env import BaseUR5eEnv
+from .two_arm_ur5e_env import TwoArmHockeyUR5eEnv
 from .hockey_ur5e_env import HockeyUR5eEnv
 from .rewards import (
     REWARD_TYPES,
@@ -15,6 +16,7 @@ from .rewards import (
 
 __all__ = [
     "BaseUR5eEnv",
+    "TwoArmHockeyUR5eEnv",
     "HockeyUR5eEnv",
     "BaseRewardFunction",
     "ReboundRewardWeights",

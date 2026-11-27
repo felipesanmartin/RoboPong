@@ -1,0 +1,65 @@
+<mujoco model="hockey_ur5e_two_arm_world">
+  <!-- Single-arm table with arm B where the back wall was, rotated 180 degrees about x = 0 -->
+  <compiler angle="radian" meshdir="assets" autolimits="true"/>
+
+  <option timestep="0.001" gravity="0 0 -9.81" integrator="implicitfast" iterations="100" tolerance="1e-6">
+    <flag contact="enable" energy="enable"/>
+  </option>
+
+  <visual>
+    <global offwidth="1280" offheight="720"/>
+  </visual>
+
+  <default>
+    <geom condim="3" friction="0.0 0.0 0.0" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+    <joint damping="0.0" armature="0.0"/>
+  </default>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.4 0.6 0.8" rgb2="0.1 0.15 0.25" width="512" height="512"/>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1="0.88 0.94 0.98" rgb2="0.80 0.90 0.96"/>
+    <material name="table_mat" texture="grid" texrepeat="6 3" reflectance="0.2"/>
+    <material name="wall_mat" rgba="0.2 0.25 0.35 1.0" reflectance="0.3"/>
+    <material name="midline_mat" rgba="0.85 0.2 0.2 0.5"/>
+    <model name="arm" file="ur5e_paddle_standalone.xml"/>
+  </asset>
+
+  <worldbody>
+    <light directional="true" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3" pos="0 0 5" dir="0 0 -1" castshadow="true"/>
+
+    <camera name="top_down" pos="0 0 5.5" xyaxes="0 1 0 -1 0 0"/>
+    <camera name="side_view" pos="0 -4.0 2.6" xyaxes="1 0 0 0 0.545 0.838"/>
+
+    <geom name="table_surface" type="plane" pos="0 0 0" size="3.0 1.5 0.1" material="table_mat"
+      contype="2" conaffinity="2" solref="0.004 1.0" solimp="0.95 0.99 0.003"/>
+    <site name="midline" type="box" pos="0 0 0.001" size="0.01 0.85 0.001" material="midline_mat"/>
+
+    <geom name="left_wall" type="box" pos="0.0 0.90 0.10" size="2.05 0.05 0.10" material="wall_mat"/>
+    <geom name="right_wall" type="box" pos="0.0 -0.90 0.10" size="2.05 0.05 0.10" material="wall_mat"/>
+
+    <frame pos="0 0 0">
+      <attach model="arm" body="pedestal" prefix="a_"/>
+    </frame>
+    <frame pos="0 0 0" euler="0 0 3.14159265358979">
+      <attach model="arm" body="pedestal" prefix="b_"/>
+    </frame>
+  </worldbody>
+
+  <include file="hockey_puck.xml"/>
+
+  <contact>
+    <pair geom1="table_surface" geom2="a_paddle_geom" condim="1" friction="0 0 0 0 0" solref="0.008 1.0" solimp="0.9 0.95 0.005"/>
+    <pair geom1="table_surface" geom2="b_paddle_geom" condim="1" friction="0 0 0 0 0" solref="0.008 1.0" solimp="0.9 0.95 0.005"/>
+    <pair geom1="a_paddle_geom" geom2="puck_geom" condim="1" friction="0 0 0 0 0" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+    <pair geom1="b_paddle_geom" geom2="puck_geom" condim="1" friction="0 0 0 0 0" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+    <pair geom1="left_wall" geom2="puck_geom" condim="1" friction="0 0 0 0 0" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+    <pair geom1="right_wall" geom2="puck_geom" condim="1" friction="0 0 0 0 0" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+  </contact>
+
+  <keyframe>
+    <!-- Both arms in the single-arm ready pose, each paddle at x = -1.75 in its own frame -->
+    <key name="ready"
+         qpos="-0.3928 -0.6889 2.5286 -3.4078 -1.5709 -0.3936 -0.3928 -0.6889 2.5286 -3.4078 -1.5709 -0.3936 0.0 0.0 0.0"
+         ctrl="-0.3928 -0.6889 2.5286 -3.4078 -1.5709 -0.3936 -0.3928 -0.6889 2.5286 -3.4078 -1.5709 -0.3936"/>
+  </keyframe>
+</mujoco>

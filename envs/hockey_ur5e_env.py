@@ -26,7 +26,7 @@ _project_root = os.path.abspath(os.path.join(_current_dir, ".."))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from envs.base_ur5e_env import BaseUR5eEnv
+from envs.base_ur5e_env import BaseUR5eEnv, HitCounter
 from envs.rewards import (
     BaseRewardFunction,
     ReboundRewardFunction,
@@ -113,38 +113,21 @@ class HockeyUR5eEnv(BaseUR5eEnv):
         )
 
         # Rebound task specific metrics
-        self.rebounds = 0
-        self.last_contact_time = -1.0
+        self.rebound_counter = HitCounter(min_gap=0.18, rising_edge=False)
+        self.wall_hit_counter = HitCounter(min_gap=0.1, rising_edge=True)
         self.prev_puck_vx = 0.0
-        self.wall_hits = 0
-        self.last_wall_hit_time = -1.0
-        self.prev_wall_contact = False
+
+    @property
+    def rebounds(self) -> int:
+        return self.rebound_counter.count
+
+    @property
+    def wall_hits(self) -> int:
+        return self.wall_hit_counter.count
 
     def _get_obs(self, ground_truth: bool = False) -> np.ndarray:
         """Construct the 23-dimensional state observation."""
-        paddle_pos, paddle_vel = self.get_paddle_state()
-        pad_x, pad_y = paddle_pos[0], paddle_pos[1]
-        pad_vx, pad_vy = paddle_vel[0], paddle_vel[1]
-
-        puck_x, puck_y, puck_vx, puck_vy = self.get_puck_state(ground_truth=ground_truth)
-
-        rel_x = puck_x - pad_x
-        rel_y = puck_y - pad_y
-        dist = np.hypot(rel_x, rel_y)
-
-        q_joints = self.data.qpos[:6]
-        qdot_joints = self.data.qvel[:6]
-
-        obs = np.concatenate(
-            [
-                [pad_x, pad_y, pad_vx, pad_vy],
-                [puck_x, puck_y, puck_vx, puck_vy],
-                [rel_x, rel_y, dist],
-                q_joints,
-                qdot_joints,
-            ]
-        ).astype(np.float32)
-
+        obs = self.arm_obs(self.arms[0], self.get_puck_state(ground_truth=ground_truth))
         return np.clip(obs, self.observation_space.low, self.observation_space.high)
 
     def reset(
@@ -156,11 +139,8 @@ class HockeyUR5eEnv(BaseUR5eEnv):
         super().reset(seed=seed)
 
         self.step_count = 0
-        self.rebounds = 0
-        self.last_contact_time = -1.0
-        self.wall_hits = 0
-        self.last_wall_hit_time = -1.0
-        self.prev_wall_contact = False
+        self.rebound_counter.reset()
+        self.wall_hit_counter.reset()
 
         # Reset UR5e to ready keyframe
         self.reset_robot_ready()
@@ -184,8 +164,6 @@ class HockeyUR5eEnv(BaseUR5eEnv):
 
         mujoco.mj_forward(self.model, self.data)
         self.prev_puck_vx = self.data.qvel[6]
-        self.prev_paddle_pos = self.data.site_xpos[self.site_id][:2].copy()
-        self.paddle_vel = np.zeros(2, dtype=np.float64)
 
         obs = self._get_obs()
         self.reward_fn.reset(self._get_obs(ground_truth=True) if self.use_camera else obs)
@@ -207,25 +185,9 @@ class HockeyUR5eEnv(BaseUR5eEnv):
         puck_x, puck_y = gt_obs[4], gt_obs[5]
         puck_vx, puck_vy = gt_obs[6], gt_obs[7]
 
-        # 3. Rebound tracking (debounced collision check)
-        rebound_occurred = False
-        if contact_detected and (self.data.time - self.last_contact_time > 0.18):
-            if puck_vx > 0.3:
-                self.rebounds += 1
-                self.last_contact_time = self.data.time
-                rebound_occurred = True
-
-        # Count each wall hit once, even if the contact spans several steps
-        wall_contact = self.wall_contact_detected
-        wall_hit = (
-            wall_contact
-            and not self.prev_wall_contact
-            and self.data.time - self.last_wall_hit_time > 0.1
-        )
-        if wall_hit:
-            self.wall_hits += 1
-            self.last_wall_hit_time = self.data.time
-        self.prev_wall_contact = wall_contact
+        # 3. Rebound and wall-hit tracking (debounced collision checks)
+        rebound_occurred = self.rebound_counter.update(contact_detected, self.data.time, valid=puck_vx > 0.3)
+        wall_hit = self.wall_hit_counter.update(self.wall_contact_detected, self.data.time)
 
         # 4. Check termination conditions
         terminated = False

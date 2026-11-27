@@ -1,6 +1,7 @@
 # PPO Training Configuration for 6-DOF UR5e Air Hockey Rebound
 
 env:
+  type: single  # single or two_arm
   side_walls: true
   use_camera: false
   frame_skip: 20

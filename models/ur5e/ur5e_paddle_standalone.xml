@@ -1,0 +1,12 @@
+<mujoco model="ur5e_paddle_standalone">
+  <!-- Standalone copy of the paddle arm so the two-arm world can attach it twice -->
+  <compiler angle="radian" meshdir="assets" autolimits="true"/>
+
+  <default>
+    <!-- Same frictionless, elastic defaults as hockey_ur5e_base.xml -->
+    <geom condim="3" friction="0.0 0.0 0.0" solref="-50000 0" solimp="0.99 0.99 0.001"/>
+    <joint damping="0.0" armature="0.0"/>
+  </default>
+
+  <include file="ur5e_paddle.xml"/>
+</mujoco>
